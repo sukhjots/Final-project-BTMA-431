@@ -1,0 +1,214 @@
+install.packages("httr")
+install.packages("XML")
+install.packages("stringr")
+install.packages("dplyr")
+install.packages("ggplot2")
+install.packages("caret")
+install.packages("car")
+
+library(httr)
+library(XML)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(car)
+
+getwd()
+
+url <- 'https://en.wikipedia.org/wiki/List_of_weather_records?fbclid=IwAR1Wf7uNugNKjr0VMhM1D5PW_9xHK8DFs9xhA4pJApm_x4DekRGkiQ1XEms'
+
+get_object <- GET(url) # GET() is a function in the httr package
+
+weather_records <- htmlParse(get_object) 
+page.tables <- readHTMLTable(weather_records, stringsAsFactors = FALSE)
+
+Country.Region.hot <- vector()
+Temperature.hot <- vector()
+Town.Location.hot <- vector()
+Date.Data.hot <- vector()
+for (i in (1:7)){
+  hot.data <- page.tables[[i]]
+  hot.data <- hot.data[-c(1), ]
+  colnames(hot.data) <- c("Country/Region", "Temperature", "Town/Location", "Date") #for loop needed#
+    for (x in (1: length(hot.data$`Country/Region`))){
+      Country.Region.hot[(length(Country.Region.hot) + 1)] <- (hot.data$`Country/Region`[x])
+      Temperature.hot[(length(Temperature.hot) + 1)] <- (hot.data$Temperature[x])
+      Town.Location.hot[(length(Town.Location.hot) + 1)] <- (hot.data$`Town/Location`[x])
+      Date.Data.hot[(length(Date.Data.hot) + 1)] <- (hot.data$Date[x])
+    }
+}
+
+all.hot.data <- data.frame("Country/Region" = Country.Region.hot,
+                           "Temperature" = Temperature.hot,
+                           "Town/Location" = Town.Location.hot,
+                           "Date" = Date.Data.hot)
+
+Country.Region.cold <- vector()
+Temperature.cold <- vector()
+Town.Location.cold <- vector()
+Date.Data.cold <- vector()
+for (i in (8:14)){
+  cold.data <- page.tables[[i]]
+  cold.data <- cold.data[-c(1), ]
+  colnames(cold.data) <- c("Country/Region", "Temperature", "Town/Location", "Date") #for loop needed#
+  for (x in (1: length(cold.data$`Country/Region`))){
+    Country.Region.cold[(length(Country.Region.cold) + 1)] <- (cold.data$`Country/Region`[x])
+    Temperature.cold[(length(Temperature.cold) + 1)] <- (cold.data$Temperature[x])
+    Town.Location.cold[(length(Town.Location.cold) + 1)] <- (cold.data$`Town/Location`[x])
+    Date.Data.cold[(length(Date.Data.cold) + 1)] <- (cold.data$Date[x])
+  }
+}
+
+all.cold.data <- data.frame("Country/Region" = Country.Region.cold,
+                           "Temperature" = Temperature.cold,
+                           "Town/Location" = Town.Location.cold,
+                           "Date" = Date.Data.cold)
+
+#-----------------------------------------------------------------------------------------------------------------------
+
+#after this the table only shows the temprature in °C 
+#The above function wasn't working for me; I did this instead to remove the Farenheit temps and replace the weird hyphen
+#characters with actual hyphens.
+all.cold.data$Temperature <- gsub("\\([^\\]]*\\)", "", all.cold.data$Temperature, perl=TRUE)
+all.cold.data$Temperature <- gsub("−", "-", all.cold.data$Temperature)
+all.hot.data$Temperature <- gsub("\\([^\\]]*\\)", "", all.hot.data$Temperature, perl = TRUE)
+all.hot.data$Temperature <- gsub("−", "-", all.hot.data$Temperature)
+#Remove the " °C " from both hot and cold data frames.
+all.cold.data$Temperature <- gsub("(.*)°C.*","\\1", all.cold.data$Temperature)
+all.hot.data$Temperature <- gsub("(.*)°C.*","\\1", all.hot.data$Temperature)
+
+all.cold.data$Temperature <- as.numeric(all.cold.data$Temperature)
+all.cold.data$Temperature1 <- (all.cold.data$Temperature * 9/5) + 32
+colnames(all.cold.data) <- c("Country/Region", "Temperature °C", "Town/Location", "Date", "Temperature °F")
+all.hot.data$Temperature <- as.numeric(all.hot.data$Temperature)
+all.hot.data$Temperature1 <- (all.hot.data$Temperature * 9/5) + 32
+colnames(all.hot.data) <- c("Country/Region", "Temperature °C", "Town/Location", "Date", "Temperature °F")
+
+#Clean up the dates a little bit. 
+all.cold.data$Date <- gsub("\\[[^\\]]*\\]", "", all.cold.data$Date, perl = TRUE)
+all.hot.data$Date <- gsub("\\[[^\\]]*\\]", "", all.hot.data$Date, perl = TRUE)
+
+all.cold.data$Date <- gsub("\\?","NA",all.cold.data$Date)
+all.hot.data$Date <- gsub("\\?", "NA", all.hot.data$Date)
+all.hot.data$`Town/Location` <- gsub("\\?", "NA", all.hot.data$`Town/Location`)
+all.cold.data$`Town/Location` <- gsub("\\?", "NA", all.cold.data$`Town/Location`)
+
+#-----------------------------------------------------------------------------------------------------------------------
+#Read in data for latitude/longitude.
+all.cold.log.lat <- read.csv("lat-long-for-coldest-temp.csv")
+all.hot.log.lat <- read.csv("longlat-for-hot-temp.csv")
+
+colnames(all.cold.log.lat) <- c("Country/Region", "Latitude", "Longitude")
+colnames(all.hot.log.lat) <- c("Country/Region", "Latitude", "Longitude")
+
+all.cold.log.lat$`Country/Region` <- all.cold.log.lat %>% arrange(`Country/Region`)
+all.hot.log.lat$`Country/Region` <- all.hot.log.lat %>% arrange(`Country/Region`)
+
+colnames(all.cold.data) <- c("Country/Region", "Temperature °C", "Town/Location", "Date", "Temperature °F")
+colnames(all.hot.data) <- c("Country/Region", "Temperature °C", "Town/Location", "Date", "Temperature °F")
+
+all.cold.data$`Country/Region` <- all.cold.data %>% arrange(`Country/Region`)
+all.hot.data$`Country/Region` <- all.hot.data %>% arrange(`Country/Region`)
+
+#-----------------------------------------------------------------------------------------------------------------------
+
+all.hot.data <- all.hot.data[-c(5,102,114),]
+all.cold.data <- all.cold.data[-c(28,93,106,107),]
+
+#-----------------------------------------------------------------------------------------------------------------------
+
+reg.cold.data <- as.data.frame(all.cold.data$`Country/Region`)
+reg.hot.data <- as.data.frame(all.hot.data$`Country/Region`)
+
+reg.cold.data$latitude <- all.cold.log.lat$Latitude
+reg.cold.data$longitude <- all.cold.log.lat$Longitude
+
+reg.hot.data$latitude <- all.hot.log.lat$Latitude
+reg.hot.data$longitude <- all.hot.log.lat$Longitude
+
+reg.cold.data$Latitude <- abs(reg.cold.data$Latitude)
+reg.hot.data$Latitude <- abs(reg.hot.data$Latitude)
+
+colnames(reg.cold.data) <- c("Country/Region", "Temperature °C", "Town/Location", "Date", "Temperature °F", "Latitude", "Longitude")
+colnames(reg.hot.data) <- c("Country/Region", "Temperature °C", "Town/Location", "Date", "Temperature °F", "Latitude", "Longitude")
+
+#-----------------------------------------------------------------------------------------------------------------------
+
+### Regression ### 
+cold.fit.lat <- lm(reg.cold.data$`Temperature °C` ~ Latitude, data = reg.cold.data)
+summary(cold.fit.lat)
+
+cold.fit.long <- lm(reg.cold.data$`Temperature °C` ~ Longitude, data = reg.cold.data)
+summary(cold.fit.long)
+
+hot.fit.lat <- lm(reg.hot.data$`Temperature °C` ~ Latitude, data = reg.hot.data)
+summary(hot.fit.lat)
+
+hot.fit.long <- lm(reg.hot.data$`Temperature °C` ~ Longitude, data = reg.hot.data)
+summary(hot.fit.long)
+
+cold.fit.latlong <- lm(reg.cold.data$`Temperature °C` ~ reg.cold.data$Latitude*reg.cold.data$Longitude)
+summary(cold.fit.latlong)
+
+hot.fit.latlong <- lm(reg.hot.data$`Temperature °C` ~ reg.hot.data$Latitude*reg.hot.data$Longitude)
+summary(hot.fit.latlong)
+
+#-----------------------------------------------------------------------------------------------------------------------
+
+#Check normality of the predictors (latitude and longitude). 
+install.packages("ggfortify")
+library(ggfortify)
+
+autoplot(cold.fit.lat, which = 2, ncol = 1)
+autoplot(cold.fit.long, which = 2, ncol = 1)
+autoplot(hot.fit.lat, which = 2, ncol = 1)
+autoplot(hot.fit.long, which = 2, ncol = 1)
+autoplot(cold.fit.latlong, which = 2, ncol = 1)
+autoplot(hot.fit.latlong, which = 2, ncol = 1)
+
+#Due to the evident outliers in the Q-Q plots, check with Cook's distance to see which the outliers may be:
+#Cold latitude: 
+cooks.D <- as.vector(cooks.distance(cold.fit.lat))
+p <- 2
+n <- nrow(reg.cold.data)
+
+influential.cold.outliers <- which(cooks.D > qf(0.05, p + 1, n - p - 1))
+reg.cold.data[influential.cold.outliers, ]
+#According to Cook's distance, the outliers are at Vostok Station and Rogers' Pass, Montana. 
+
+#Cold longitude:
+cooks.D <- as.vector(cooks.distance(cold.fit.long))
+p <- 2
+n <- nrow(reg.cold.data)
+
+influential.cold.outliers.2 <- which(cooks.D > qf(0.05, p + 1, n - p - 1))
+reg.cold.data[influential.cold.outliers.2, ]
+#No significant outliers. 
+
+#Hot latitude:
+cooks.D <- as.vector(cooks.distance(hot.fit.lat))
+p <- 2
+n <- nrow(reg.hot.data)
+
+influential.hot.outliers <- which(cooks.D > qf(0.05, p + 1, n - p - 1))
+reg.hot.data[influential.cold.outliers, ]
+#According to Cook's distance, the outliers are at The Valley, Anguilla, and Jeddah, Saudi Arabia. 
+
+#Hot longitude: 
+cooks.D <- as.vector(cooks.distance(hot.fit.long))
+p <- 2
+n <- nrow(reg.hot.data)
+
+influential.hot.outliers.2 <- which(cooks.D > qf(0.05, p + 1, n - p - 1))
+reg.hot.data[influential.cold.outliers.2, ]
+#No significant outliers. 
+
+#Hot interaction between latitude and longitude:
+cooks.D <- as.vector(cooks.distance(hot.fit.latlong))
+p <- 2
+n <- nrow(reg.hot.data)
+
+influential.hot.outliers.3 <- which(cooks.D > qf(0.05, p + 1, n - p - 1))
+reg.hot.data[influential.hot.outliers.3, ]
+#Outliers (2) are both in Antarctica. 
